@@ -35,7 +35,7 @@ const CGFloat MSDynamicsDrawerDefaultOpenStateRevealWidthHorizontal = 267.0;
 const CGFloat MSDynamicsDrawerDefaultOpenStateRevealWidthVertical = 300.0;
 const CGFloat MSPaneViewVelocityThreshold = 5.0;
 const CGFloat MSPaneViewVelocityMultiplier = 5.0;
-const CGFloat MSPaneViewScreenEdgeThreshold = 25.0; // After testing Apple's `UIScreenEdgePanGestureRecognizer` this seems to be the closest value to create an equivalent effect.
+const CGFloat MSPaneViewScreenEdgeThreshold = 24.0; // After testing Apple's `UIScreenEdgePanGestureRecognizer` this seems to be the closest value to create an equivalent effect.
 
 NSString * const MSDynamicsDrawerBoundaryIdentifier = @"MSDynamicsDrawerBoundaryIdentifier";
 
@@ -375,7 +375,7 @@ void MSDynamicsDrawerDirectionActionForMaskedValues(NSInteger direction, MSDynam
 - (void)setDrawerViewController:(UIViewController *)drawerViewController forDirection:(MSDynamicsDrawerDirection)direction
 {
     NSAssert(MSDynamicsDrawerDirectionIsCardinal(direction), @"Only accepts cardinal reveal directions");
-    for (UIViewController *currentDrawerViewController in self.drawerViewControllers) {
+    for (UIViewController * __unused currentDrawerViewController in self.drawerViewControllers) {
         NSAssert(currentDrawerViewController != drawerViewController, @"Unable to add a drawer view controller when it's previously been added");
     }
     if (direction & MSDynamicsDrawerDirectionHorizontal) {
@@ -803,8 +803,10 @@ void MSDynamicsDrawerDirectionActionForMaskedValues(NSInteger direction, MSDynam
             }
         }
         [self didChangeValueForKey:NSStringFromSelector(@selector(paneState))];
-        self.paneView.frame = (CGRect){[self paneViewOriginForPaneState:paneState], self.paneView.frame.size};
     }
+    
+    // Update pane frame regardless of if it's changed
+    self.paneView.frame = (CGRect){[self paneViewOriginForPaneState:paneState], self.paneView.frame.size};
     
     // Update `currentDirection` to `MSDynamicsDrawerDirectionNone` if the `paneState` is `MSDynamicsDrawerPaneStateClosed`
     if (paneState == MSDynamicsDrawerPaneStateClosed) {
@@ -1078,12 +1080,12 @@ void MSDynamicsDrawerDirectionActionForMaskedValues(NSInteger direction, MSDynam
             break;
     }
     // Bounded open
-    if (*paneLocation <= paneBoundClosedLocation) {
+    if (paneLocation && (*paneLocation <= paneBoundClosedLocation)) {
         *paneLocation = paneBoundClosedLocation;
         *bounded = YES;
     }
     // Bounded closed
-    else if (*paneLocation >= paneBoundOpenLocation) {
+    else if (paneLocation && (*paneLocation >= paneBoundOpenLocation)) {
         *paneLocation = paneBoundOpenLocation;
         *bounded = YES;
     }
@@ -1274,19 +1276,26 @@ void MSDynamicsDrawerDirectionActionForMaskedValues(NSInteger direction, MSDynam
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
 {
-	if ((gestureRecognizer == self.panePanGestureRecognizer) && self.paneDragRequiresScreenEdgePan) {
-        MSDynamicsDrawerPaneState paneState;
-        if ([self paneViewIsPositionedInValidState:&paneState] && (paneState == MSDynamicsDrawerPaneStateClosed)) {
-            UIRectEdge edges = [self panGestureRecognizer:self.panePanGestureRecognizer didStartAtEdgesOfView:self.paneView];
-            // Mask out edges that aren't possible
-            BOOL validEdges = (edges & self.possibleDrawerDirection);
-            // If there is a valid edge and pane drag is revealed for that edge's direction
-            if (validEdges && [self paneDragRevealEnabledForDirection:validEdges]) {
-                return YES;
+    if (gestureRecognizer == self.panePanGestureRecognizer) {
+        if ([self.delegate respondsToSelector:@selector(dynamicsDrawerViewController:shouldBeginPanePan:)]) {
+            if (![self.delegate dynamicsDrawerViewController:self shouldBeginPanePan:self.panePanGestureRecognizer]) {
+                return NO;
             }
-            return NO;
         }
-	}
+        if (self.paneDragRequiresScreenEdgePan) {
+            MSDynamicsDrawerPaneState paneState;
+            if ([self paneViewIsPositionedInValidState:&paneState] && (paneState == MSDynamicsDrawerPaneStateClosed)) {
+                UIRectEdge edges = [self panGestureRecognizer:self.panePanGestureRecognizer didStartAtEdgesOfView:self.paneView];
+                // Mask out edges that aren't possible
+                BOOL validEdges = (edges & self.possibleDrawerDirection);
+                // If there is a valid edge and pane drag is revealed for that edge's direction
+                if (validEdges && [self paneDragRevealEnabledForDirection:validEdges]) {
+                    return YES;
+                }
+                return NO;
+            }
+        }
+    }
 	return YES;
 }
 
@@ -1335,7 +1344,7 @@ void MSDynamicsDrawerDirectionActionForMaskedValues(NSInteger direction, MSDynam
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRequireFailureOfGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
 {
     // If the other gesture recognizer's view is a `UITableViewCell` instance's internal `UIScrollView`, require failure
-    if ([otherGestureRecognizer.view.superview isKindOfClass:[UITableViewCell class]] && [otherGestureRecognizer.view isKindOfClass:[UIScrollView class]]) {
+    if ([[otherGestureRecognizer.view nextResponder] isKindOfClass:[UITableViewCell class]] && [otherGestureRecognizer.view isKindOfClass:[UIScrollView class]]) {
         return YES;
     }
     return NO;
